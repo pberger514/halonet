@@ -16,7 +16,7 @@ class HaloCatalog(object):
         for hi in self.Non:
             halo = np.logical_and(np.logical_and(gx-self.pos[0, hi] < self.Rth[hi],
                                                  gy-self.pos[1, hi] < self.Rth[hi]),
-                                  gz-self.pos[2, hi] < self.Rth[hi]))
+                                  gz-self.pos[2, hi] < self.Rth[hi])
             grid = np.where(halo, 1, grid)
 
         return grid
