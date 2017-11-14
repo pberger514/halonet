@@ -1,23 +1,34 @@
 import numpy as np
 
+_DATADIR = "/scratch2/p/pen/pberger/ppruns/train/"
+
 class HaloCatalog(object):
 
     _data = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'Rth', 'xL', 'yL', 'zL', 'zform']
 
-    def to_binary_grid(self, boxsize, ngrid, wrap=True):
+    def to_binary_grid(self, boxsize, ngrid):
+
+        """
+        This is slow as fuck and so should probably be written in Fortran or cython.
+        
+        """
         
         dg = float(boxsize)/ngrid
         gloc = np.linspace(-(boxsize/2-dg/2), boxsize/2-dg/2, ngrid)
         gx, gy, gz = np.meshgrid(gloc, gloc, gloc)
+        gpos = np.array([gx, gy, gz])
 
         grid = np.zeros((ngrid, ngrid, ngrid), dtype=np.int8)
 
-        #Loop through halos
-        for hi in self.Non:
-            halo = np.logical_and(np.logical_and(gx-self.pos[0, hi] < self.Rth[hi],
-                                                 gy-self.pos[1, hi] < self.Rth[hi]),
-                                  gz-self.pos[2, hi] < self.Rth[hi])
-            grid = np.where(halo, 1, grid)
+        for hi in range(self.Non):
+            print hi
+            for ii in range(3):
+                if ii == 0:
+                    halo = (np.absolute(gpos[ii]-self.Lpos[ii, hi]) < self.Rth[hi]).astype(np.int8)
+                else:
+                    halo += (np.absolute(gpos[ii]-self.Lpos[ii, hi]) < self.Rth[hi]).astype(np.int8)
+
+            grid += (halo == 3).astype(np.int8)
 
         return grid
 
