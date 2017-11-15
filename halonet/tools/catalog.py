@@ -8,11 +8,9 @@ class HaloCatalog(object):
 
     def to_binary_grid(self, boxsize, ngrid):
 
-        """
-        This is slow as fuck and so should probably be written in Fortran or cython.
+        import _fast_tools
         
         """
-        
         dg = float(boxsize)/ngrid
         gloc = np.linspace(-(boxsize/2-dg/2), boxsize/2-dg/2, ngrid)
         gx, gy, gz = np.meshgrid(gloc, gloc, gloc)
@@ -29,7 +27,10 @@ class HaloCatalog(object):
                     halo += (np.absolute(gpos[ii]-self.Lpos[ii, hi]) < self.Rth[hi]).astype(np.int8)
 
             grid += (halo == 3).astype(np.int8)
+        """
 
+        grid = _fast_tools._to_binary_mask(boxsize, ngrid, self.Lpos, self.Rth)
+        
         return grid
 
     @classmethod
@@ -43,7 +44,8 @@ class HaloCatalog(object):
         print "\nNumber of halos to read in = ",Non[0], RTHmax, zin
 
         hc = HaloCatalog()
-
+        
+        Non = Non[0]
         hc.Non = Non
         hc.Rthmax = RTHmax
         hc.zin = zin
