@@ -29,7 +29,7 @@ from keras.layers.merge import add
 #######################################################################
 
 
-def get_model(nlevels, nfmi = 16, input_shape = (64, 64, 64, 1)):
+def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1)):
 
     """
     Returns a CNN V-Net Keras model.
@@ -40,7 +40,7 @@ def get_model(nlevels, nfmi = 16, input_shape = (64, 64, 64, 1)):
             Number of levels in the V-Net, which is the number of times the resolution of
             of the filter is halved.
 
-        nfmi: int 
+        nfm: int 
             The number of feature maps in the first convolutional layer (default = 16).
 
         intput_shape: tuple, 
@@ -54,6 +54,9 @@ def get_model(nlevels, nfmi = 16, input_shape = (64, 64, 64, 1)):
 
     """
 
+    #Define the PReLU activation
+    #prelu = kl.advanced_activations.PReLU(init='uniform', weights=None)
+
     # Initialize the model.
     #model = km.Sequential()
     #This is not a Sequential model so create input state
@@ -64,52 +67,62 @@ def get_model(nlevels, nfmi = 16, input_shape = (64, 64, 64, 1)):
     updown_kernel_size = (2, 2, 2)
     updown_stride = updown_kernel_size
 
-    level_list = []
+    # Fine grained features to forward
+    forward_list = []
 
     for fi in range(nlevels):
         # Add the initial convolution layer, with nfm feature maps.
-        # For simplicity we are doing only one convolution per level (see [1]).
+        # For simplicity we are doing two convolutions for each non-zero level (see [1]).
         if fi == 0:
             residual = kl.Conv3D(nfm, kernel_size = conv_kernel_size, padding='same')(input_state)
             shortcut = kl.Conv3D(nfm, kernel_size = (1, 1, 1), padding='same')(input_state)
 
         else:
             residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(x)
+            residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(residual)
             shortcut = kl.Conv3D(nfm*2**fi, kernel_size = (1, 1, 1), padding='same')(x)
 
         # Perform elementwise sum with input to train on residuals.
         x = add([residual, shortcut])
 
         #Save a copy for fine-grained features forwarding
-        level_list.append(add([residual, shortcut]))
+        forward_list.append(x)
 
-        # Peform a down convolution with PReLU activation
-        x = kl.Conv3D(nfm, kernel_size = updown_kernel_size, strides=updown_stride,
-                      activation = kl.PReLU, padding='same')(x) #padding?
+        # Peform a down convolution with PReLU activation, double the number of feature maps.
+        x = kl.Conv3D(nfm*2**(fi+1), kernel_size = updown_kernel_size, strides=updown_stride)(x)
+        x = kl.PReLU()(x)
 
         # Check average pooling vs. residual network?
 
-    # Add a fully-connected layer?
-    #model.add(kl.Dense(numnodes, activation = 'tanh'))
-
     # Step back up to achieve initial resolution
     for fi in range(nlevels)[::-1]:
-        
-        if fi != nlevels:
-            #Concatenate with fine grained forwarded features along filters axis
-            x = kl.Concatenate(axis=-1)([level_list[fi], x])
-
-        #Perform a couple convolutions
-        residual = kl.Conv3D(nfm*2**(fi-1), kernel_size = conv_kernel_size, padding='same')(x)
-        residual = kl.Conv3D(nfm*2**(fi-1), kernel_size = conv_kernel_size, padding='same')(residual)
-        shortcut = kl.Conv3D(nfm*2**(fi-1), kernel_size = (1, 1, 1), padding='same')(x)
-        x = add([residual, shortcut])
             
-        # Peform an up-convolution with PReLU activation
-        x = kl.Conv3DTranspose(nfm, kernel_size = updown_kernel_size, strides=updown_stride,
-                               activation = kl.PReLU)(x)
+        if fi != (nlevels-1):
+            #Concatenate with fine grained forwarded features along filters axis
+            x = kl.Concatenate(axis=-1)([forward_list[fi+1], x])
 
-    
+        # Do some convolutions, forwarding the residuals
+        residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(x)
+        residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(residual)
+        shortcut = kl.Conv3D(nfm*2**(fi+1), kernel_size = (1, 1, 1), padding='same')(x)
+        x = add([residual, shortcut])
+
+        # Peform a deconvolution with PReLU activation, halve the number of channels
+        x = kl.Conv3DTranspose(nfm*2**fi, kernel_size = updown_kernel_size, strides=updown_stride)(x)
+        x = kl.PReLU()(x)
+
+    # Data show should now have size (batch_size, input_x, input_y, input_z, nfm)
+    # Final forwarding and convolution
+    x = kl.Concatenate(axis=-1)([forward_list[0], x])
+    residual = kl.Conv3D(nfm, kernel_size = conv_kernel_size, padding='same')(x)
+    shortcut = kl.Conv3D(nfm, kernel_size = (1, 1, 1), padding='same')(x)
+    x = add([residual, shortcut])
+    x = kl.PReLU()(x)
+
+    # Final layer is a (1, 1, 1) filter with softmax along filter axis.
+    # We produce only the binary mask not the foreground and background volume as in [1].
+    x = kl.Conv3D(1, kernel_size = (1, 1, 1), activation='softmax')(x)
+
     model = km.Model(inputs = input_state, outputs = x)
 
     return model
