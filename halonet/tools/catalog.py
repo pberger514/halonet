@@ -1,6 +1,7 @@
 import numpy as np
 
-_DATADIR = "/scratch2/p/pen/pberger/ppruns/train/"
+_DATADIR = "/scratch/p/pen/pberger/train/catalogs/"
+_FIELDDIR = "/scratch/p/pen/pberger/train/fields/"
 
 class HaloCatalog(object):
 
@@ -78,4 +79,13 @@ class HaloCatalog(object):
         return np.array([self.peakdata['xL'], self.peakdata['yL'], self.peakdata['zL']])
 
 
-    
+def split3d(arr3d, nchunks):
+    arr3ds = [arr3d,]
+    for di in range(3):
+        arr3dsi = []
+        for ai in range(len(arr3ds)):
+            arr3dsi.extend(np.split(arr3ds[ai], nchunks, axis=di))
+        arr3ds = arr3dsi
+
+    del arr3d
+    return arr3ds

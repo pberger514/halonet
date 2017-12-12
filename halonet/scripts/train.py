@@ -1,7 +1,8 @@
-from .tools import catalog
-from .net import model
-from .net import loss
+from halonet.tools import catalog
+from halonet.net import model
+from halonet.net import loss
 
+import numpy as np
 import glob
 
 nlevels=4
@@ -16,7 +17,9 @@ fz = 256 # input field size
 sz = 64  # size to input to the network
 bx = 512.0 # Box size im Mpc
 catalogfiles = np.sort(glob.glob(catalog._DATADIR+'*merge*'))
-fieldfiles = np.sort(glob.glob(catalog._FIELDDIR+'Fvec*'))
+fieldfiles = np.sort(glob.glob(catalog._FIELDDIR+'*delta*'))
+
+print catalogfiles[:10], fieldfiles[:10]
 
 nfiles = len(catalogfiles)
 
@@ -31,10 +34,12 @@ for fi in range(nfiles):
 
     # Split large arrays into sub-chunks
     nchunks = fz/sz
-    delta = np.array(split3d(delta, nchunks))
-    mask = np.array(split3d(mask, nchunks))
+    delta = np.array(catalog.split3d(delta, nchunks))
+    delta = delta.reshape(nchunks**3, sz, sz, sz, 1)
+    mask = np.array(catalog.split3d(mask, nchunks))
+    mask = mask.reshape(nchunks**3, sz, sz, sz, 1)
     
-    # We now have 4D arrays of shape (batch_size, sz, sz, sz)
+    # We now have 5D arrays of shape (batch_size, sz, sz, sz, nchannels=1)
     batch_size = int((1.0-vp)*nchunks**3)
     test_size = int(vp*nchunks**3)
 
@@ -44,15 +49,3 @@ for fi in range(nfiles):
 
     if (fi == 0) or (fi % 10 == 0): 
         print fi, train_loss, train_acc, test_loss, test_acc
-
-
-def split3d(arr3d, nchunks):
-    arr3ds = [arr3d,]
-    for di in range(3):
-        arr3dsi = []
-        for ai in range(len(arr3ds)):
-            arr3dsi.extend(np.split(arr3ds[ai], nchunks, axis=di))
-        arr3ds = arr3dsi
-
-    del arr3d
-    return arr3ds
