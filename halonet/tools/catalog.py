@@ -76,3 +76,6 @@ class HaloCatalog(object):
     @property
     def Lpos(self):
         return np.array([self.peakdata['xL'], self.peakdata['yL'], self.peakdata['zL']])
+
+
+    
