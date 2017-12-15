@@ -25,11 +25,12 @@ import keras.models as km
 import keras.layers as kl
 from keras.layers.merge import add
 
+import tensorflow as tf
 
 #######################################################################
 
 
-def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1)):
+def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, lrelu_alpha=None):
 
     """
     Returns a CNN V-Net Keras model.
@@ -90,7 +91,13 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1)):
 
         # Peform a down convolution with PReLU activation, double the number of feature maps.
         x = kl.Conv3D(nfm*2**(fi+1), kernel_size = updown_kernel_size, strides=updown_stride)(x)
-        x = kl.PReLU()(x)
+        if lrelu_alpha:
+            x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
+        else:
+            x = kl.PReLU()(x)
+
+        if dropout and abs(fi - nlevels) <= 2:
+            x = kl.Dropout(0.5)(x)
 
         # Check average pooling vs. residual network?
 
@@ -109,7 +116,13 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1)):
 
         # Peform a deconvolution with PReLU activation, halve the number of channels
         x = kl.Conv3DTranspose(nfm*2**fi, kernel_size = updown_kernel_size, strides=updown_stride)(x)
-        x = kl.PReLU()(x)
+        if lrelu_alpha:
+            x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
+        else:
+            x = kl.PReLU()(x)
+
+        if dropout and abs(fi - nlevels) <= 2:
+            x = kl.Dropout(0.5)(x)
 
     # Data show should now have size (batch_size, input_x, input_y, input_z, nfm)
     # Final forwarding and convolution
@@ -117,11 +130,25 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1)):
     residual = kl.Conv3D(nfm, kernel_size = conv_kernel_size, padding='same')(x)
     shortcut = kl.Conv3D(nfm, kernel_size = (1, 1, 1), padding='same')(x)
     x = add([residual, shortcut])
-    x = kl.PReLU()(x)
+    if lrelu_alpha:
+        x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
+    else:
+        x = kl.PReLU()(x)
 
     # Final layer is a (1, 1, 1) filter with softmax along filter axis.
     # We produce only the binary mask not the foreground and background volume as in [1].
-    x = kl.Conv3D(1, kernel_size = (1, 1, 1), activation='softmax')(x)
+    #x = kl.Conv3D(1, kernel_size = (1, 1, 1), activation='softmax')(x)
+    x = kl.Conv3D(2, kernel_size = (1, 1, 1))(x)
+    if lrelu_alpha:
+        x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
+    else:
+        x = kl.PReLU()(x)
+
+    # Apply softmax
+    x = kl.Activation('softmax')(x)
+
+    # Flatten output for voxelwise loss.
+    #x = kl.Flatten()(x)
 
     model = km.Model(inputs = input_state, outputs = x)
 
