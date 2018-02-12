@@ -96,8 +96,8 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, l
         else:
             x = kl.PReLU()(x)
 
-        if dropout and abs(fi - nlevels) <= 2:
-            x = kl.Dropout(0.5)(x)
+        if dropout and abs(fi - nlevels) <= 4:
+            x = kl.Dropout(dropout)(x)
 
         # Check average pooling vs. residual network?
 
@@ -122,7 +122,7 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, l
             x = kl.PReLU()(x)
 
         if dropout and abs(fi - nlevels) <= 2:
-            x = kl.Dropout(0.5)(x)
+            x = kl.Dropout(dropout)(x)
 
     # Data show should now have size (batch_size, input_x, input_y, input_z, nfm)
     # Final forwarding and convolution
