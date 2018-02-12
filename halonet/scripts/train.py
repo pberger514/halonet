@@ -21,173 +21,169 @@ sz = 64  # size to input to the network
 bx = 568.0 # Box size im Mpc
 catalogfiles = np.sort(glob.glob(catalog._DATADIR+'*merge*'))
 fieldfiles = np.sort(glob.glob(catalog._FIELDDIR+'*delta*'))
+nfiles = len(catalogfiles)
 
 inputmodelfile = None
 inputweightsfile = "/scratch/p/pen/pberger/train/model/halonet-2018-02-11.h5"
 outputmodelfile = "/scratch/p/pen/pberger/train/model/halonet-%s.h5" % datetime.datetime.now().date()
 
-filesperbatch = 5
-nepochs = 50
+filesperbatch_start = 5
+nepochs_start = 50
 
 check=False #Output some verification information
 #Batch size info
 nlevels=5
 vp=0.125 # Percentage of batch for validation
 
-if inputmodelfile is None:    
-    #hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1),
-    #                       lrelu_alpha=0.05, dropout=0.5)
+if inputmodelfile is None:
 
     hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1))
 
-    if inputweightsfile is not None:
-        print "Changing the learning rate, momentum, and nepochs."
-        filesperbatch = 20
-        nepochs = 50
-        sgd = SGD(lr=.01, momentum=0.5)
-    else:
+    if inputweightsfile is None:
+        #hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1),
+        #                       lrelu_alpha=0.05, dropout=0.5)
+        
         sgd = SGD(lr=.00025, momentum=0.2)
+        filesperbatch = filesperbatch_start
+        nepochs = nepochs_start
+        
+    else:
+        print "Changing the learning rate, momentum, and nepochs."
+        filesperbatch = nfiles/2
+        nepochs = 50
+        sgd = SGD(lr=.1, momentum=0.9)
         
     # Compile model
-    #hnet.compile(loss=loss.dice_loss_coefficient, optimizer='sgd', metrics=['accuracy',])
-    #hnet.compile(loss=loss.dice_loss_coefficient, optimizer=sgd)
-    #hnet.compile(loss=losses.binary_crossentropy, optimizer='sgd', metrics=['accuracy',])
     hnet.compile(loss=loss.dice_loss_coefficient, optimizer=sgd, metrics=['accuracy',])
     #hnet.compile(loss=losses.binary_crossentropy, optimizer=sgd, metrics=['accuracy',])
+    
     if inputweightsfile is not None:
         hnet.load_weights(inputweightsfile)
-        skip_initial=True
     
 else:
     from keras.models import load_model
     hnet = load_model(inputmodelfile,
                       custom_objects={'dice_loss_coefficient':loss.dice_loss_coefficient})
-    skip_initial=True
 
-nfiles = len(catalogfiles)
-
-for fi in range(nfiles):
-
-    if skip_initial and fi < filesperbatch :
-        print "Skipping initial file", fi
-        continue
+niter = 4 #Number of times to go through full dataset
+for it in range(niter):
+    for fi in range(nfiles):
     
-    # Load in a catalog and associated field
-    hc = catalog.HaloCatalog.from_file(catalogfiles[fi])
-    deltai = np.fromfile(fieldfiles[fi], dtype=np.float32).reshape(fz, fz, fz).T # fortran -> C ?
+        # Load in a catalog and associated field
+        hc = catalog.HaloCatalog.from_file(catalogfiles[fi])
+        deltai = np.fromfile(fieldfiles[fi], dtype=np.float32).reshape(fz, fz, fz).T # fortran -> C ?
 
-    # Renormalize delta to have standard deviation 1.
-    std = np.std(deltai)
-    deltai = deltai/std
+        # Renormalize delta to have standard deviation 1.
+        std = np.std(deltai)
+        deltai = deltai/std
     
-    # Compute the binary mask (ground truth)
-    maski = hc.to_binary_grid(bx, fz).astype(np.float32)
+        # Compute the binary mask (ground truth)
+        maski = hc.to_binary_grid(bx, fz).astype(np.float32)
 
-    if check and fi == 0:
-        # Write input data to file to check
-        outfile = open('checkdata_delta_large.dat', 'wb')
-        deltai.tofile(outfile)
-        outfile.close()
+        if check and fi == 0:
+            # Write input data to file to check
+            outfile = open('checkdata_delta_large.dat', 'wb')
+            deltai.tofile(outfile)
+            outfile.close()
 
-        outfile = open('checkdata_mask_large.dat', 'wb')
-        maski.tofile(outfile)
-        outfile.close()
+            outfile = open('checkdata_mask_large.dat', 'wb')
+            maski.tofile(outfile)
+            outfile.close()
 
-    # Split large arrays into sub-chunks
-    nchunks = fz/sz
-    deltai = np.array(catalog.split3d(deltai, nchunks))
-    deltai = deltai.reshape(nchunks**3, sz, sz, sz, 1)
-    maski = np.array(catalog.split3d(maski, nchunks))
-    maski = maski.reshape(nchunks**3, sz, sz, sz, 1)
+        # Split large arrays into sub-chunks
+        nchunks = fz/sz
+        deltai = np.array(catalog.split3d(deltai, nchunks))
+        deltai = deltai.reshape(nchunks**3, sz, sz, sz, 1)
+        maski = np.array(catalog.split3d(maski, nchunks))
+        maski = maski.reshape(nchunks**3, sz, sz, sz, 1)
     
-    # We now have 5D arrays of shape (nchunks**3, sz, sz, sz, nchannels=1)
-    # Concatenate them on to the batch
-    if (fi % filesperbatch) == 0:
-        delta = deltai
-        mask = maski
-    else:
-        delta = np.concatenate((deltai, delta), axis=0)
-        mask = np.concatenate((maski, mask), axis=0)
-        
-    if check and fi == 0:
-        # Write input data to file to check
-        outfile = open('checkdata_delta.dat', 'wb')
-        delta[0, :, :, :, 0].tofile(outfile)
-        outfile.close()
-
-        outfile = open('checkdata_mask.dat', 'wb')
-        mask[0, :, :, :, 0].tofile(outfile)
-        outfile.close()
-        
-    if (fi + 1) % filesperbatch == 0 :
-
-        #if (fi + 1) / filesperbatch == 2 :
-            #Change learning rate, momentum, and nepochs
-        #    print "Changing the learning rate, momentum, and nepochs."
-        #    sgd.lr.set_value(0.0001)
-        #    sgd.momentum.set_value(0.5)
-        #    nepochs_i = 20
-        
-        # Okay now train the network
-        batch_size = int((1.0-vp)*nchunks**3)*filesperbatch
-        test_size = int(vp*nchunks**3)*filesperbatch
-
-        # Separate into training and validation sets
-        delta_t = delta[:batch_size]
-        mask_t = mask[:batch_size]
-        
-        delta_v = delta[batch_size:]
-        mask_v = mask[batch_size:]
-
-        if nepochs is None:
-            nepochs_i = filesperbatch*nchunks**3/8
+        # We now have 5D arrays of shape (nchunks**3, sz, sz, sz, nchannels=1)
+        # Concatenate them on to the batch
+        if (fi % filesperbatch) == 0:
+            delta = deltai
+            mask = maski
         else:
-            nepochs_i = nepochs
+            delta = np.concatenate((deltai, delta), axis=0)
+            mask = np.concatenate((maski, mask), axis=0)
+        
+        if check and fi == 0:
+            # Write input data to file to check
+            outfile = open('checkdata_delta.dat', 'wb')
+            delta[0, :, :, :, 0].tofile(outfile)
+            outfile.close()
 
-        print "%i, Training on a batch of size %s , %s ..." % (fi, delta_t.shape, mask_t.shape)
-        print "With a validation of size %s , %s ..." % (delta_v.shape, mask_v.shape)
-        print "With mini-batches of size %i, for %i epochs ..." % (batch_size/filesperbatch/(nchunks**3/8), nepochs_i)
+            outfile = open('checkdata_mask.dat', 'wb')
+            mask[0, :, :, :, 0].tofile(outfile)
+            outfile.close()
+        
+        if (fi + 1) % filesperbatch == 0 :
 
-        """
-        #Perform reflections for augmentation
-        for di in range(6):
-            if di % 3 == 0:
-                delta_t = delta_t[:, ::-1]
-                mask_t = mask_t[:, ::-1]
-                delta_v = delta_v[:, ::-1]
-                mask_v = mask_v[:, ::-1]
-            if di % 3 == 1:
-                delta_t = delta_t[:, :, ::-1]
-                mask_t = mask_t[:, :, ::-1]
-                delta_v = delta_v[:, :, ::-1]
-                mask_v = mask_v[:, :, ::-1]
-            if di % 3 == 2:
-                delta_t = delta_t[:, :, :, ::-1]
-                mask_t = mask_t[:, :, :, ::-1]
-                delta_v = delta_v[:, :, :, ::-1]
-                mask_v = mask_v[:, :, :, ::-1]
-        """
+            #if (fi + 1) / filesperbatch == 2 :
+            #Change learning rate, momentum, and nepochs
+            #    print "Changing the learning rate, momentum, and nepochs."
+            #    sgd.lr.set_value(0.0001)
+            #    sgd.momentum.set_value(0.5)
+            #    nepochs_i = 20
             
-        # Okay now actually train the network
-        # Reshape mask for voxelwise loss.
-        hnet.fit(delta_t, np.concatenate([mask_t, 1.0-mask_t], axis=-1),
-                 validation_data=(delta_v, np.concatenate([mask_v, 1.0-mask_v], axis=-1)),
-                 epochs=nepochs_i,
-                 batch_size=batch_size/filesperbatch/(nchunks**3/8),
-                 verbose=2)
+            # Okay now train the network
+            batch_size = int((1.0-vp)*nchunks**3)*filesperbatch
+            test_size = int(vp*nchunks**3)*filesperbatch
 
-        #Save the model
-        hnet.save(outputmodelfile)
+            # Separate into training and validation sets
+            delta_t = delta[:batch_size]
+            mask_t = mask[:batch_size]
+        
+            delta_v = delta[batch_size:]
+            mask_v = mask[batch_size:]
+
+            if nepochs is None:
+                nepochs_i = filesperbatch*nchunks**3/8
+            else:
+                nepochs_i = nepochs
+
+            print "%i, Training on a batch of size %s , %s ..." % (fi, delta_t.shape, mask_t.shape)
+            print "With a validation of size %s , %s ..." % (delta_v.shape, mask_v.shape)
+            print "With mini-batches of size %i, for %i epochs ..." % (batch_size/filesperbatch/(nchunks**3/8), nepochs_i)
+
+            #Perform random reflections for augmentation
+            if it > 0 :
+                print "Reflecting ..."
+                rpc = 0.8 # Percentage to reflect
+                rsel = np.sort(np.random.choice(np.arange(batch_size), size=int(batch_size*rpc),
+                                                replace=False))
+                
+                if np.random.uniform() >= 0.5:
+                    delta_t[rsel] = delta_t[rsel, ::-1]
+                    mask_t[rsel] = mask_t[rsel, ::-1]
+                    #delta_v = delta_v[:, ::-1]
+                    #mask_v = mask_v[:, ::-1]
+
+                if np.random.uniform() >= 0.5:
+                    delta_t = delta_t[rsel, :, ::-1]
+                    mask_t = mask_t[rsel, :, ::-1]
+
+                if np.random.uniform() >= 0.5:
+                    delta_t[rsel] = delta_t[rsel, :, :, ::-1]
+                    mask_t[rsel] = mask_t[rsel, :, :, ::-1]
+
+
+            # Okay now actually train the network
+            # Reshape mask for voxelwise loss.
+            hnet.fit(delta_t, np.concatenate([mask_t, 1.0-mask_t], axis=-1),
+                     validation_data=(delta_v, np.concatenate([mask_v, 1.0-mask_v], axis=-1)),
+                     epochs=nepochs_i,
+                     batch_size=batch_size/filesperbatch/(nchunks**3/8),
+                     verbose=2)
+
+            #Save the model
+            hnet.save(outputmodelfile)
         
             #Reshape mask for voxelwise loss.
-            #for it in range(niter):
             #    train_loss, train_acc = hnet.train_on_batch(delta_t,
             #                                                mask_t.reshape(batch_size, -1))
-
-        #test_loss, test_acc = hnet.test_on_batch(delta_v,
-        #                                         mask_v.reshape(test_size, -1))
-
-        #print fi, train_loss, train_acc, test_loss, test_acc
+            #test_loss, test_acc = hnet.test_on_batch(delta_v,
+            #                                         mask_v.reshape(test_size, -1))
+            #print fi, train_loss, train_acc, test_loss, test_acc
 
 
         #Shuffle arrays along batch axis
@@ -195,6 +191,3 @@ for fi in range(nfiles):
         #np.random.shuffle(delta_ts)
         #np.random.set_state(rng_state)
         #np.random.shuffle(mask_ts)
-
-
-
