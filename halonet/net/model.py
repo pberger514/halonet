@@ -59,7 +59,6 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, l
     #prelu = kl.advanced_activations.PReLU(init='uniform', weights=None)
 
     # Initialize the model.
-    #model = km.Sequential()
     #This is not a Sequential model so create input state
     input_state = kl.Input(shape = input_shape)
 
@@ -135,9 +134,8 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, l
     else:
         x = kl.PReLU()(x)
 
-    # Final layer is a (1, 1, 1) filter with softmax along filter axis.
-    # We produce only the binary mask not the foreground and background volume as in [1].
-    #x = kl.Conv3D(1, kernel_size = (1, 1, 1), activation='softmax')(x)
+    # Final layer is a (1, 1, 1) filter with 2 features corresponding to the
+    # foreground and background (see [1]).
     x = kl.Conv3D(2, kernel_size = (1, 1, 1))(x)
     if lrelu_alpha:
         x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
@@ -146,9 +144,6 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, l
 
     # Apply softmax
     x = kl.Activation('softmax')(x)
-
-    # Flatten output for voxelwise loss.
-    #x = kl.Flatten()(x)
 
     model = km.Model(inputs = input_state, outputs = x)
 
