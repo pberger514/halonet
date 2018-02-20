@@ -68,56 +68,54 @@ else:
     hnet = load_model(inputmodelfile,
                       custom_objects={'dice_loss_coefficient':loss.dice_loss_coefficient})
 
-niter = 4 #Number of times to go through full dataset
+niter = 8 #Number of times to go through full dataset
 for it in range(niter):
     for fi in range(nfiles):
+        if not ((filesperbatch == nfiles) and (it > 0)):
+            # Load in a catalog and associated field
+            hc = catalog.HaloCatalog.from_file(catalogfiles[fi])
+            deltai = np.fromfile(fieldfiles[fi], dtype=np.float32).reshape(fz, fz, fz).T # fortran -> C ?
+
+            # Renormalize delta to have standard deviation 1.
+            std = np.std(deltai)
+            deltai = deltai/std
     
-        # Load in a catalog and associated field
-        hc = catalog.HaloCatalog.from_file(catalogfiles[fi])
-        deltai = np.fromfile(fieldfiles[fi], dtype=np.float32).reshape(fz, fz, fz).T # fortran -> C ?
+            # Compute the binary mask (ground truth)
+            maski = hc.to_binary_grid(bx, fz).astype(np.float32)
 
-        # Renormalize delta to have standard deviation 1.
-        std = np.std(deltai)
-        deltai = deltai/std
+            if check and fi == 0 and it == 0:
+                # Write input data to file to check
+                outfile = open('checkdata_delta_large.dat', 'wb')
+                deltai.tofile(outfile)
+                outfile.close()
+                outfile = open('checkdata_mask_large.dat', 'wb')
+                maski.tofile(outfile)
+                outfile.close()
+
+            # Split large arrays into sub-chunks
+            nchunks = fz/sz
+            deltai = np.array(catalog.split3d(deltai, nchunks))
+            deltai = deltai.reshape(nchunks**3, sz, sz, sz, 1)
+            maski = np.array(catalog.split3d(maski, nchunks))
+            maski = maski.reshape(nchunks**3, sz, sz, sz, 1)
     
-        # Compute the binary mask (ground truth)
-        maski = hc.to_binary_grid(bx, fz).astype(np.float32)
-
-        if check and fi == 0:
-            # Write input data to file to check
-            outfile = open('checkdata_delta_large.dat', 'wb')
-            deltai.tofile(outfile)
-            outfile.close()
-
-            outfile = open('checkdata_mask_large.dat', 'wb')
-            maski.tofile(outfile)
-            outfile.close()
-
-        # Split large arrays into sub-chunks
-        nchunks = fz/sz
-        deltai = np.array(catalog.split3d(deltai, nchunks))
-        deltai = deltai.reshape(nchunks**3, sz, sz, sz, 1)
-        maski = np.array(catalog.split3d(maski, nchunks))
-        maski = maski.reshape(nchunks**3, sz, sz, sz, 1)
-    
-        # We now have 5D arrays of shape (nchunks**3, sz, sz, sz, nchannels=1)
-        # Concatenate them on to the batch
-        if (fi % filesperbatch) == 0:
-            delta = deltai
-            mask = maski
-        else:
-            delta = np.concatenate((deltai, delta), axis=0)
-            mask = np.concatenate((maski, mask), axis=0)
+            # We now have 5D arrays of shape (nchunks**3, sz, sz, sz, nchannels=1)
+            # Concatenate them on to the batch
+            if (fi % filesperbatch) == 0:
+                delta = deltai
+                mask = maski
+            else:
+                delta = np.concatenate((deltai, delta), axis=0)
+                mask = np.concatenate((maski, mask), axis=0)
         
-        if check and fi == 0:
-            # Write input data to file to check
-            outfile = open('checkdata_delta.dat', 'wb')
-            delta[0, :, :, :, 0].tofile(outfile)
-            outfile.close()
-
-            outfile = open('checkdata_mask.dat', 'wb')
-            mask[0, :, :, :, 0].tofile(outfile)
-            outfile.close()
+            if check and fi == 0:
+                # Write input data to file to check
+                outfile = open('checkdata_delta.dat', 'wb')
+                delta[0, :, :, :, 0].tofile(outfile)
+                outfile.close()
+                outfile = open('checkdata_mask.dat', 'wb')
+                mask[0, :, :, :, 0].tofile(outfile)
+                outfile.close()
         
         if (fi + 1) % filesperbatch == 0 :
 
@@ -155,17 +153,17 @@ for it in range(niter):
                 rsel = np.sort(np.random.choice(np.arange(batch_size), size=int(batch_size*rpc),
                                                 replace=False))
                 
-                if np.random.uniform() >= 0.5:
+                if np.random.uniform() >= 0.6:
                     delta_t[rsel] = delta_t[rsel, ::-1]
                     mask_t[rsel] = mask_t[rsel, ::-1]
                     #delta_v = delta_v[:, ::-1]
                     #mask_v = mask_v[:, ::-1]
 
-                if np.random.uniform() >= 0.5:
-                    delta_t = delta_t[rsel, :, ::-1]
-                    mask_t = mask_t[rsel, :, ::-1]
+                if np.random.uniform() >= 0.6:
+                    delta_t[rsel] = delta_t[rsel, :, ::-1]
+                    mask_t[rsel] = mask_t[rsel, :, ::-1]
 
-                if np.random.uniform() >= 0.5:
+                if np.random.uniform() >= 0.6:
                     delta_t[rsel] = delta_t[rsel, :, :, ::-1]
                     mask_t[rsel] = mask_t[rsel, :, :, ::-1]
 
