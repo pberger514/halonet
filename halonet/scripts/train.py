@@ -23,9 +23,11 @@ catalogfiles = np.sort(glob.glob(catalog._DATADIR+'*merge*'))
 fieldfiles = np.sort(glob.glob(catalog._FIELDDIR+'*delta*'))
 nfiles = len(catalogfiles)
 
+savedir = "/scratch/p/pen/pberger/train/model/"
 inputmodelfile = None
-inputweightsfile = None
-outputmodelfile = "/scratch/p/pen/pberger/train/model/halonet-%s.h5" % datetime.datetime.now().date()
+inputweightsfile = savedir + "halonet-2018-02-20_3conv.h5"
+outputmodelfile = savedir + "halonet-%s.h5" % datetime.datetime.now().date()
+outputhistoryfile = savedir + "halonethistory-%s.npy" % datetime.datetime.now().date()
 
 filesperbatch_start = 5
 nepochs_start = 50
@@ -50,9 +52,9 @@ if inputmodelfile is None:
         
     else:
         print "Changing the learning rate, momentum, and nepochs."
-        filesperbatch = nfiles/2
-        nepochs = 50
-        sgd = SGD(lr=.1, momentum=0.9)
+        filesperbatch = nfiles
+        nepochs = 15
+        sgd = SGD(lr=.05, momentum=0.9)
         
     # Compile model
     hnet.compile(loss=loss.dice_loss_coefficient, optimizer=sgd, metrics=['accuracy',])
@@ -170,14 +172,17 @@ for it in range(niter):
 
             # Okay now actually train the network
             # Reshape mask for voxelwise loss.
-            hnet.fit(delta_t, np.concatenate([mask_t, 1.0-mask_t], axis=-1),
-                     validation_data=(delta_v, np.concatenate([mask_v, 1.0-mask_v], axis=-1)),
-                     epochs=nepochs_i,
-                     batch_size=batch_size/filesperbatch/(nchunks**3/8),
-                     verbose=2)
+            history = hnet.fit(delta_t,
+                               np.concatenate([mask_t, 1.0-mask_t], axis=-1),
+                               validation_data=(delta_v,
+                                                np.concatenate([mask_v, 1.0-mask_v], axis=-1)),
+                               epochs=nepochs_i,
+                               batch_size=batch_size/filesperbatch/(nchunks**3/8),
+                               verbose=2)
 
             #Save the model
             hnet.save(outputmodelfile)
+            np.save(outputhistoryfile, history.history)
         
             #Reshape mask for voxelwise loss.
             #    train_loss, train_acc = hnet.train_on_batch(delta_t,
