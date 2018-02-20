@@ -30,7 +30,7 @@ import tensorflow as tf
 #######################################################################
 
 
-def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, lrelu_alpha=None):
+def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout=False, lrelu_alpha=None):
 
     """
     Returns a CNN V-Net Keras model.
@@ -78,9 +78,12 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, l
             shortcut = kl.Conv3D(nfm, kernel_size = (1, 1, 1), padding='same')(input_state)
 
         else:
+            #shortcut = kl.Conv3D(nfm*2**fi, kernel_size = (1, 1, 1), padding='same')(x)
+            shortcut = x
             residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(x)
-            residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(residual)
-            shortcut = kl.Conv3D(nfm*2**fi, kernel_size = (1, 1, 1), padding='same')(x)
+            for ci in range(nconv-1):
+                residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(residual)
+            
 
         # Perform elementwise sum with input to train on residuals.
         x = add([residual, shortcut])
@@ -95,22 +98,28 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), dropout=False, l
         else:
             x = kl.PReLU()(x)
 
-        if dropout and abs(fi - nlevels) <= 4:
+        if dropout and abs(fi - nlevels) <= 2:
             x = kl.Dropout(dropout)(x)
+
+        print x.shape
 
         # Check average pooling vs. residual network?
 
     # Step back up to achieve initial resolution
     for fi in range(nlevels)[::-1]:
-            
+
+        #Grab the shortcut
+        #shortcut = kl.Conv3D(nfm*2**(fi+1), kernel_size = (1, 1, 1), padding='same')(x)
+        shortcut = x
+        
         if fi != (nlevels-1):
             #Concatenate with fine grained forwarded features along filters axis
             x = kl.Concatenate(axis=-1)([forward_list[fi+1], x])
-
-        # Do some convolutions, forwarding the residuals
+        
+        # Do some convolutions, then forward the residuals
         residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(x)
-        residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(residual)
-        shortcut = kl.Conv3D(nfm*2**(fi+1), kernel_size = (1, 1, 1), padding='same')(x)
+        for ci in range(nconv-1):
+            residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(residual)
         x = add([residual, shortcut])
 
         # Peform a deconvolution with PReLU activation, halve the number of channels

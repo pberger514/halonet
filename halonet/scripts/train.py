@@ -24,7 +24,7 @@ fieldfiles = np.sort(glob.glob(catalog._FIELDDIR+'*delta*'))
 nfiles = len(catalogfiles)
 
 inputmodelfile = None
-inputweightsfile = "/scratch/p/pen/pberger/train/model/halonet-2018-02-11.h5"
+inputweightsfile = None
 outputmodelfile = "/scratch/p/pen/pberger/train/model/halonet-%s.h5" % datetime.datetime.now().date()
 
 filesperbatch_start = 5
@@ -32,12 +32,13 @@ nepochs_start = 50
 
 check=False #Output some verification information
 #Batch size info
-nlevels=5
+nlevels=4
+nconv = 3
 vp=0.125 # Percentage of batch for validation
 
 if inputmodelfile is None:
 
-    hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1))
+    hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1), nconv=nconv)
 
     if inputweightsfile is None:
         #hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1),
