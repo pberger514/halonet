@@ -98,7 +98,7 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
         else:
             x = kl.PReLU()(x)
 
-        if dropout and abs(fi - nlevels) <= 2:
+        if dropout and abs(fi - nlevels) <= 4:
             x = kl.Dropout(dropout)(x)
 
         # Check average pooling vs. residual network?

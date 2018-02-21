@@ -25,7 +25,7 @@ nfiles = len(catalogfiles)
 
 savedir = "/scratch/p/pen/pberger/train/model/"
 inputmodelfile = None
-inputweightsfile = savedir + "halonet-2018-02-20_3conv.h5"
+inputweightsfile = savedir + "halonet-2018-02-20-secondtrybroke.h5"
 outputmodelfile = savedir + "halonet-%s.h5" % datetime.datetime.now().date()
 outputhistoryfile = savedir + "halonethistory-%s.npy" % datetime.datetime.now().date()
 
@@ -33,8 +33,9 @@ filesperbatch_start = 5
 nepochs_start = 50
 
 check=False #Output some verification information
+reflect_right_away = True 
 #Batch size info
-nlevels=4
+nlevels=5
 nconv = 3
 vp=0.125 # Percentage of batch for validation
 
@@ -53,8 +54,8 @@ if inputmodelfile is None:
     else:
         print "Changing the learning rate, momentum, and nepochs."
         filesperbatch = nfiles
-        nepochs = 15
-        sgd = SGD(lr=.05, momentum=0.9)
+        nepochs = 10
+        sgd = SGD(lr=.0001, momentum=0.01)
         
     # Compile model
     hnet.compile(loss=loss.dice_loss_coefficient, optimizer=sgd, metrics=['accuracy',])
@@ -147,7 +148,7 @@ for it in range(niter):
             print "With mini-batches of size %i, for %i epochs ..." % (batch_size/filesperbatch/(nchunks**3/8), nepochs_i)
 
             #Perform random reflections for augmentation
-            if it > 0 :
+            if it > 0 or reflect_right_away:
                 print "Reflecting ..."
                 rpc = 0.8 # Percentage to reflect
                 rsel = np.sort(np.random.choice(np.arange(batch_size), size=int(batch_size*rpc),
