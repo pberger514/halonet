@@ -25,7 +25,7 @@ nfiles = len(catalogfiles)
 
 savedir = "/scratch/p/pen/pberger/train/model/"
 inputmodelfile = None
-inputweightsfile = savedir + "halonet-2018-02-20-secondtrybroke.h5"
+inputweightsfile = None
 outputmodelfile = savedir + "halonet-%s.h5" % datetime.datetime.now().date()
 outputhistoryfile = savedir + "halonethistory-%s.npy" % datetime.datetime.now().date()
 
@@ -33,7 +33,7 @@ filesperbatch_start = 5
 nepochs_start = 50
 
 check=False #Output some verification information
-reflect_right_away = True 
+reflect_right_away = False
 #Batch size info
 nlevels=5
 nconv = 3
@@ -41,21 +41,20 @@ vp=0.125 # Percentage of batch for validation
 
 if inputmodelfile is None:
 
-    hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1), nconv=nconv)
-
     if inputweightsfile is None:
-        #hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1),
-        #                       lrelu_alpha=0.05, dropout=0.5)
-        
-        sgd = SGD(lr=.00025, momentum=0.2)
+        hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1),
+                               nconv=nconv, dropout=0.5)
+        sgd = SGD(lr=.00025, momentum=0.4)
         filesperbatch = filesperbatch_start
         nepochs = nepochs_start
         
     else:
         print "Changing the learning rate, momentum, and nepochs."
+        hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1), nconv=nconv)
         filesperbatch = nfiles
         nepochs = 10
-        sgd = SGD(lr=.0001, momentum=0.01)
+        sgd = SGD(lr=.1, momentum=0.5)
+        #sgd = SGD(lr=.0001, momentum=0.01)
         
     # Compile model
     hnet.compile(loss=loss.dice_loss_coefficient, optimizer=sgd, metrics=['accuracy',])

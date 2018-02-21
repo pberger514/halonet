@@ -67,6 +67,14 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
     updown_kernel_size = (2, 2, 2)
     updown_stride = updown_kernel_size
 
+
+    def NonLinearity(t, lrelu=lrelu_alpha):
+        if lrelu is not None:
+            to = kl.LeakyReLU(alpha=lrelu_alpha)(t)
+        else:
+            to = kl.PReLU()(t)
+        return to
+
     # Fine grained features to forward
     forward_list = []
 
@@ -74,16 +82,18 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
         # Add the initial convolution layer, with nfm feature maps.
         # For simplicity we are doing two convolutions for each non-zero level (see [1]).
         if fi == 0:
+            shortcut = input_state
             residual = kl.Conv3D(nfm, kernel_size = conv_kernel_size, padding='same')(input_state)
-            shortcut = kl.Conv3D(nfm, kernel_size = (1, 1, 1), padding='same')(input_state)
+            residual = NonLinearity(residual)
 
         else:
             #shortcut = kl.Conv3D(nfm*2**fi, kernel_size = (1, 1, 1), padding='same')(x)
             shortcut = x
             residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(x)
+            residual = NonLinearity(residual)
             for ci in range(nconv-1):
                 residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(residual)
-            
+                residual = NonLinearity(residual)
 
         # Perform elementwise sum with input to train on residuals.
         x = add([residual, shortcut])
@@ -93,10 +103,7 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
 
         # Peform a down convolution with PReLU activation, double the number of feature maps.
         x = kl.Conv3D(nfm*2**(fi+1), kernel_size = updown_kernel_size, strides=updown_stride)(x)
-        if lrelu_alpha:
-            x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
-        else:
-            x = kl.PReLU()(x)
+        x = NonLinearity(x)
 
         if dropout and abs(fi - nlevels) <= 4:
             x = kl.Dropout(dropout)(x)
@@ -116,16 +123,15 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
         
         # Do some convolutions, then forward the residuals
         residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(x)
+        residual = NonLinearity(residual)
         for ci in range(nconv-1):
             residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(residual)
+            residual = NonLinearity(residual)
         x = add([residual, shortcut])
 
         # Peform a deconvolution with PReLU activation, halve the number of channels
         x = kl.Conv3DTranspose(nfm*2**fi, kernel_size = updown_kernel_size, strides=updown_stride)(x)
-        if lrelu_alpha:
-            x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
-        else:
-            x = kl.PReLU()(x)
+        x = NonLinearity(x)
 
         if dropout and abs(fi - nlevels) <= 2:
             x = kl.Dropout(dropout)(x)
@@ -136,18 +142,12 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
     residual = kl.Conv3D(nfm, kernel_size = conv_kernel_size, padding='same')(x)
     shortcut = kl.Conv3D(nfm, kernel_size = (1, 1, 1), padding='same')(x)
     x = add([residual, shortcut])
-    if lrelu_alpha:
-        x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
-    else:
-        x = kl.PReLU()(x)
+    x = NonLinearity(x)
 
     # Final layer is a (1, 1, 1) filter with 2 features corresponding to the
     # foreground and background (see [1]).
     x = kl.Conv3D(2, kernel_size = (1, 1, 1))(x)
-    if lrelu_alpha:
-        x = kl.LeakyReLU(alpha=lrelu_alpha)(x)
-    else:
-        x = kl.PReLU()(x)
+    x = NonLinearity(x)
 
     # Apply softmax
     x = kl.Activation('softmax')(x)
