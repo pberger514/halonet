@@ -30,7 +30,7 @@ import tensorflow as tf
 #######################################################################
 
 
-def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout=False, lrelu_alpha=None):
+def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout_in=False, dropout_out=False, lrelu_alpha=None):
 
     """
     Returns a CNN V-Net Keras model.
@@ -68,11 +68,15 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
     updown_stride = updown_kernel_size
 
 
-    def NonLinearity(t, lrelu=lrelu_alpha):
+    def NonLinearity(t, lrelu=lrelu_alpha, dropout=False):
         if lrelu is not None:
             to = kl.LeakyReLU(alpha=lrelu_alpha)(t)
         else:
             to = kl.PReLU()(t)
+
+        if dropout:
+            to = kl.Dropout(dropout)(to)
+            
         return to
 
     # Fine grained features to forward
@@ -90,10 +94,10 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
             #shortcut = kl.Conv3D(nfm*2**fi, kernel_size = (1, 1, 1), padding='same')(x)
             shortcut = x
             residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(x)
-            residual = NonLinearity(residual)
+            residual = NonLinearity(residual, dropout=dropout_in)
             for ci in range(nconv-1):
                 residual = kl.Conv3D(nfm*2**fi, kernel_size = conv_kernel_size, padding='same')(residual)
-                residual = NonLinearity(residual)
+                residual = NonLinearity(residual, dropout=dropout_in)
 
         # Perform elementwise sum with input to train on residuals.
         x = add([residual, shortcut])
@@ -103,10 +107,10 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
 
         # Peform a down convolution with PReLU activation, double the number of feature maps.
         x = kl.Conv3D(nfm*2**(fi+1), kernel_size = updown_kernel_size, strides=updown_stride)(x)
-        x = NonLinearity(x)
-
-        if dropout and abs(fi - nlevels) <= 4:
-            x = kl.Dropout(dropout)(x)
+        if abs(fi - nlevels) < nlevels:
+            x = NonLinearity(x, dropout=dropout_out)
+        else:
+            x = NonLinearity(x)
 
         # Check average pooling vs. residual network?
 
@@ -123,18 +127,18 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
         
         # Do some convolutions, then forward the residuals
         residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(x)
-        residual = NonLinearity(residual)
+        residual = NonLinearity(residual, dropout=dropout_in)
         for ci in range(nconv-1):
             residual = kl.Conv3D(nfm*2**(fi+1), kernel_size = conv_kernel_size, padding='same')(residual)
-            residual = NonLinearity(residual)
+            residual = NonLinearity(residual, dropout=dropout_in)
         x = add([residual, shortcut])
 
         # Peform a deconvolution with PReLU activation, halve the number of channels
         x = kl.Conv3DTranspose(nfm*2**fi, kernel_size = updown_kernel_size, strides=updown_stride)(x)
-        x = NonLinearity(x)
-
-        if dropout and abs(fi - nlevels) <= 2:
-            x = kl.Dropout(dropout)(x)
+        if abs(fi - nlevels) < nlevels:
+            x = NonLinearity(x, dropout=dropout_out)
+        else:
+            x = NonLinearity(x)
 
     # Data show should now have size (batch_size, input_x, input_y, input_z, nfm)
     # Final forwarding and convolution

@@ -43,7 +43,7 @@ if inputmodelfile is None:
 
     if inputweightsfile is None:
         hnet = model.get_model(nlevels, input_shape=(sz, sz, sz, 1),
-                               nconv=nconv, dropout=0.5)
+                               nconv=nconv, dropout_in=0.25, dropout_out=0.5)
         sgd = SGD(lr=.00025, momentum=0.4)
         filesperbatch = filesperbatch_start
         nepochs = nepochs_start
