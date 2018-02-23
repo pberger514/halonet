@@ -79,13 +79,35 @@ class HaloCatalog(object):
         return np.array([self.peakdata['xL'], self.peakdata['yL'], self.peakdata['zL']])
 
 
-def split3d(arr3d, nchunks):
+def split3d(arr3d, nchunks, nbuff=None, dump_edges=False):
     arr3ds = [arr3d,]
     for di in range(3):
         arr3dsi = []
         for ai in range(len(arr3ds)):
-            arr3dsi.extend(np.split(arr3ds[ai], nchunks, axis=di))
+            arr3dsi.extend(split(arr3ds[ai], nchunks,
+                                 axis=di, nbuff=nbuff,
+                                 dump_edges=dump_edges))
         arr3ds = arr3dsi
 
     del arr3d
     return arr3ds
+
+
+def split(arr, nchunks, axis=0, nbuff=None, dump_edges=False):
+
+    if nbuff is None:
+        arr_list = np.split(arr, nchunks, axis=axis)
+    
+    else:
+        nsub = (arr.shape[axis] - 2*nbuff)/nchunks
+        nmesh = nsub + 2*nbuff
+        arr_list = []
+        for sli in range(nchunks):
+            sl = [slice(None)]*len(arr.shape)
+            sl[axis] = slice(sli*nsub, nmesh + sli*nsub)
+            arr_list.append(arr[sl])
+
+    if dump_edges:
+        arr_list = arr_list[1:-1]
+        
+    return arr_list
