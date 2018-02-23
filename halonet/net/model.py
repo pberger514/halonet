@@ -30,7 +30,7 @@ import tensorflow as tf
 #######################################################################
 
 
-def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout_in=False, dropout_out=False, lrelu_alpha=None):
+def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout_in=False, dropout_out=False, lrelu_alpha=None, batch_norm=False):
 
     """
     Returns a CNN V-Net Keras model.
@@ -68,11 +68,16 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
     updown_stride = updown_kernel_size
 
 
-    def NonLinearity(t, lrelu=lrelu_alpha, dropout=False):
-        if lrelu is not None:
-            to = kl.LeakyReLU(alpha=lrelu_alpha)(t)
+    def NonLinearity(t, lrelu=lrelu_alpha, dropout=False, batch_norm=batch_norm):
+        if batch_norm:
+            to = kl.BatchNormalization()(t)
         else:
-            to = kl.PReLU()(t)
+            to = t
+        
+        if lrelu is not None:
+            to = kl.LeakyReLU(alpha=lrelu_alpha)(to)
+        else:
+            to = kl.PReLU()(to)
 
         if dropout:
             to = kl.Dropout(dropout)(to)
