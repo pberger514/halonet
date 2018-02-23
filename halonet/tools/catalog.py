@@ -1,7 +1,7 @@
 import numpy as np
 
-_DATADIR = "/scratch/p/pen/pberger/train/catalogs/"
-_FIELDDIR = "/scratch/p/pen/pberger/train/fields/"
+_DATADIR = "/scratch2/p/pen/pberger/ppruns/train/trainv0/output/"
+_FIELDDIR = "/scratch2/p/pen/pberger/ppruns/train/trainv0/fields/"
 
 class HaloCatalog(object):
 
@@ -77,7 +77,6 @@ class HaloCatalog(object):
     @property
     def Lpos(self):
         return np.array([self.peakdata['xL'], self.peakdata['yL'], self.peakdata['zL']])
-
 
 def split3d(arr3d, nchunks):
     arr3ds = [arr3d,]
