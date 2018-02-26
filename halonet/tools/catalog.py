@@ -1,4 +1,5 @@
 import numpy as np
+from . import _fast_tools
 
 _DATADIR = "/scratch/p/pen/pberger/train/catalogs/"
 _FIELDDIR = "/scratch/p/pen/pberger/train/fields/"
@@ -8,8 +9,6 @@ class HaloCatalog(object):
     _data = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'Rth', 'xL', 'yL', 'zL', 'zform']
 
     def to_binary_grid(self, boxsize, ngrid):
-
-        import _fast_tools
         
         """
         dg = float(boxsize)/ngrid
