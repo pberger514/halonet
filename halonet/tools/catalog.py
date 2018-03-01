@@ -34,7 +34,7 @@ class HaloCatalog(object):
         return grid
 
     @classmethod
-    def from_file(cls, filename):
+    def from_file(cls, filename, Rcut=None):
 
         pkfile=open(filename,"rb")
 
@@ -53,6 +53,14 @@ class HaloCatalog(object):
         npkdata = 11*Non
         peakdata = np.fromfile(pkfile, dtype=np.float32, count=npkdata)
         peakdata = np.reshape(peakdata,(Non,11))
+
+        #Apply mass cut if required.
+        if Rcut is not None:
+            Rth = peakdata[:, 6]
+            dm = Rth > Rcut
+            peakdata = peakdata[dm]
+            hc.Non = int(np.sum(dm))
+            print "New Non after cut at Rth of %2.5f is:" % Rcut, hc.Non
 
         hc.peakdata = {}
 
