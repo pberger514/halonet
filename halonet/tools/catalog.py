@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.linalg as la
 from . import _fast_tools
 
 _DATADIR = "/scratch/p/pen/pberger/train/catalogs/"
@@ -11,27 +12,85 @@ class HaloCatalog(object):
     def to_binary_grid(self, boxsize, ngrid):
         
         """
-        dg = float(boxsize)/ngrid
-        gloc = np.linspace(-(boxsize/2-dg/2), boxsize/2-dg/2, ngrid)
-        gx, gy, gz = np.meshgrid(gloc, gloc, gloc)
-        gpos = np.array([gx, gy, gz])
+        Return a ngrid**3 grid with 1s at grid points with centres
+        inside Lagrangian positions of halos and 0s elsewhere.
 
-        grid = np.zeros((ngrid, ngrid, ngrid), dtype=np.int8)
+        Parameters
+        ----------
+        boxsize : float
+            Side length of box in Mpc
 
-        for hi in range(self.Non):
-            print hi
-            for ii in range(3):
-                if ii == 0:
-                    halo = (np.absolute(gpos[ii]-self.Lpos[ii, hi]) < self.Rth[hi]).astype(np.int8)
-                else:
-                    halo += (np.absolute(gpos[ii]-self.Lpos[ii, hi]) < self.Rth[hi]).astype(np.int8)
+        ngrid : int
+            Number of position points to bin to.
+        
+        Returns
+        -------
+        grid : np.ndarray([ngrid, ngrid, ngrid])
+            The binary grid.
 
-            grid += (halo == 3).astype(np.int8)
         """
 
         grid = _fast_tools._to_binary_mask(boxsize, ngrid, self.Lpos, self.Rth)
         
         return grid
+
+    def do_measurements(self, boxsize, delta, verbose=False):
+        """
+        Here we expect a periodic delta as input.
+
+        """
+
+        ngrid = delta.shape[0]
+
+        cellsize = boxsize / ngrid
+
+        Rth_max = int(np.ceil(self.Rthmax/cellsize))
+
+        # Array of k values
+        k = np.fft.fftfreq(ngrid, d=cellsize)
+        klist = [k[:, np.newaxis, np.newaxis], k[np.newaxis, :, np.newaxis], k[np.newaxis, np.newaxis, :]]
+        k2 = klist[0]**2 + klist[1]**2 + klist[2]**2
+        
+        # Create container
+        strain_bar = np.zeros((self.Non, 3, 3), dtype=np.float32)
+        
+        #Loop through elements of strain tensor
+        for ii in range(3):
+            for jj in range(3):
+
+                if ii <= jj:
+
+                    if verbose:
+                        print "Performing 3D fft for i=%i, j=%i..." % (ii, jj)
+                    dij = np.fft.ifftn(np.fft.fftn(delta)*(-klist[ii]*klist[jj]/k2)).real.astype(np.float32)
+
+                    if verbose:
+                        print "Averaging in spheres..."
+                    strain_bar[:, ii, jj] = _fast_tools._average_inside_radius(boxsize, self.Non, self.Lpos, self.Rth, dij)
+
+        if verbose:
+            print "Performing eigendecomposition..."
+        # Get eigenvectors and eigenvalues
+        w, v = la.eigh(strain_bar, UPLO='U')
+
+        if verbose:
+            print "Getting average delta..."
+        #Also get the average delta
+        delta_bar = _fast_tools._average_inside_radius(boxsize, self.Non, self.Lpos, self.Rth, delta)
+
+        # Normalize eigenvalues
+        w /= (delta_bar[:, np.newaxis]/3)
+
+        # Get the good stuff
+        meas = np.zeros((self.Non, 3))
+
+        if verbose:
+            print "Computing measurements..."
+        meas[:, 0] = delta_bar
+        meas[:, 1] = (w[:,-1] - w[:,-3])/6
+        meas[:, 2] = (w[:,-1] - 2*w[:,-2] + w[:,-3])/6
+
+        return meas
 
     @classmethod
     def from_file(cls, filename, Rcut=None):
