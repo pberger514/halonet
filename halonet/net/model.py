@@ -69,7 +69,7 @@ def get_model(nlevels, nfm = 16, input_shape = (64, 64, 64, 1), nconv=2, dropout
 
     def NonLinearity(t, lrelu=lrelu_alpha, dropout=False, batch_norm=batch_norm):
         if batch_norm:
-            to = kl.BatchNormalization()(t)
+            to = kl.BatchNormalization(scale=False)(t)
         else:
             to = t
         

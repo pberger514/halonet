@@ -1,5 +1,8 @@
 import numpy as np
 import numpy.linalg as la
+import os
+
+
 from . import _fast_tools
 
 _DATADIR = "/scratch/p/pen/pberger/train/catalogs/"
@@ -49,7 +52,7 @@ class HaloCatalog(object):
         # Array of k values
         k = np.fft.fftfreq(ngrid, d=cellsize)
         klist = [k[:, np.newaxis, np.newaxis], k[np.newaxis, :, np.newaxis], k[np.newaxis, np.newaxis, :]]
-        k2 = klist[0]**2 + klist[1]**2 + klist[2]**2
+        k2i = invert_no_zero(klist[0]**2 + klist[1]**2 + klist[2]**2)
         
         # Create container
         strain_bar = np.zeros((self.Non, 3, 3), dtype=np.float32)
@@ -62,7 +65,7 @@ class HaloCatalog(object):
 
                     if verbose:
                         print "Performing 3D fft for i=%i, j=%i..." % (ii, jj)
-                    dij = np.fft.ifftn(np.fft.fftn(delta)*(-klist[ii]*klist[jj]/k2)).real.astype(np.float32)
+                    dij = np.fft.ifftn(np.fft.fftn(delta)*(-klist[ii]*klist[jj]*k2i)).real.astype(np.float32)
 
                     if verbose:
                         print "Averaging in spheres..."
@@ -92,39 +95,80 @@ class HaloCatalog(object):
 
         return meas
 
+    def sort_by_mass(self):
+        """
+        Sort peakdata by decreasing mass.
+        """
+
+        prelist = zip(*(np.arange(self.Non), self.Rth))
+        prelist.sort(key=lambda x : x[1])
+        sind, Rths = zip(*prelist)
+        sind = list(sind)[::-1]
+
+        for di, ds in enumerate(self._data):
+            dset = self.peakdata[ds].copy()
+            dsets = np.array(dset[sind])
+            self.peakdata[ds] = dsets
+        
+
     @classmethod
-    def from_file(cls, filename, Rcut=None):
+    def from_file(cls, filename, extension='pksc', Rcut=None):
 
-        pkfile=open(filename,"rb")
+        if extension == 'pksc':
+        
+            pkfile=open(filename,"rb")
 
-        Non    = np.fromfile(pkfile,dtype=np.int32,count=1)
-        RTHmax = np.fromfile(pkfile,dtype=np.float32,count=1)
-        zin    = np.fromfile(pkfile,dtype=np.float32,count=1)
-        print "\nNumber of halos to read in = ",Non[0], RTHmax, zin
+            Non    = np.fromfile(pkfile,dtype=np.int32,count=1)[0]
+            RTHmax = np.fromfile(pkfile,dtype=np.float32,count=1)
+            zin    = np.fromfile(pkfile,dtype=np.float32,count=1)
+            print "\nNumber of halos to read in = ",Non, RTHmax, zin
+        
+            npkdata = 11*Non
+            peakdata = np.fromfile(pkfile, dtype=np.float32, count=npkdata)
+            peakdata = np.reshape(peakdata,(Non,11))
 
+            peakdatal = list(peakdata.swapaxes(0, 1))
+
+        elif extension == 'npz':
+
+            pkfile = np.load(filename)
+
+            Rth = pkfile['Rth_hn'].astype(np.float32)
+            xpk = pkfile['x_hn'].astype(np.float32)
+            ypk = pkfile['y_hn'].astype(np.float32)
+            zpk = pkfile['z_hn'].astype(np.float32)
+
+            peakdatal = [None, None, None, None, None, None, Rth, xpk, ypk, zpk, None]
+
+            Non = Rth.shape[0]
+            RTHmax = np.max(Rth)
+            zin = 0
+
+
+        #Create HaloCatalog object
         hc = HaloCatalog()
-        
-        Non = Non[0]
-        hc.Non = Non
-        hc.Rthmax = RTHmax
-        hc.zin = zin
-        
-        npkdata = 11*Non
-        peakdata = np.fromfile(pkfile, dtype=np.float32, count=npkdata)
-        peakdata = np.reshape(peakdata,(Non,11))
-
-        #Apply mass cut if required.
-        if Rcut is not None:
-            Rth = peakdata[:, 6]
-            dm = Rth > Rcut
-            peakdata = peakdata[dm]
-            hc.Non = int(np.sum(dm))
-            print "New Non after cut at Rth of %2.5f is:" % Rcut, hc.Non
 
         hc.peakdata = {}
 
-        for di, ds in enumerate(cls._data):
-            hc.peakdata[ds] = peakdata[:, di]
+        _data = cls._data
+        hc._data = []
+        for di, ds in enumerate(_data):
+            if peakdatal[di] is not None:
+                hc._data.append(ds)
+                hc.peakdata[ds] = peakdatal[di]
+                
+        hc.Non = Non
+        hc.Rthmax = RTHmax
+        hc.zin = zin
+
+        #Apply mass cut if required.
+        if Rcut is not None:
+            Rth = hc.Rth
+            dm = Rth > Rcut
+            for di, ds in enumerate(hc._data):
+                hc.peakdata[ds] = hc.peakdata[ds][dm]
+            hc.Non = int(np.sum(dm))
+            print "New Non after cut at Rth of %2.5f is:" % Rcut, hc.Non
 
         return hc
 
@@ -177,3 +221,22 @@ def split(arr, nchunks, axis=0, nbuff=None, dump_edges=False):
         arr_list = arr_list[1:-1]
         
     return arr_list
+
+
+def invert_no_zero(x):
+    """Return the reciprocal, but ignoring zeros.
+
+    Where `x != 0` return 1/x, or just return 0. Importantly this routine does
+    not produce a warning about zero division.
+
+    Parameters
+    ----------
+    x : np.ndarray
+
+    Returns
+    -------
+    r : np.ndarray
+        Return the reciprocal of x.
+    """
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return np.where(x == 0, 0.0, 1.0 / x)

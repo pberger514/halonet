@@ -94,11 +94,11 @@ cpdef _to_binary_mask(float boxsize, int ngrid, np.ndarray[dtype=np.float32_t, n
 
 
 @cython.boundscheck(False)
-cpdef _find_pairs(np.ndarray[dtype=np.float32_t, ndim=2] posi, np.ndarray[dtype=np.float32_t, ndim=1] Rthi, int Noni, np.ndarray[dtype=np.float32_t, ndim=2] posj, np.ndarray[dtype=np.float32_t, ndim=1] Rthj, int Nonj, float pos_cut = 5.0, float R_cut = 0.25):
+cpdef _find_pairs(np.ndarray[dtype=np.float32_t, ndim=2] posi, np.ndarray[dtype=np.float32_t, ndim=1] Rthi, int Noni, np.ndarray[dtype=np.float32_t, ndim=2] posj, np.ndarray[dtype=np.float32_t, ndim=1] Rthj, int Nonj, float R_cut = 0.25, str mode = 'centre'):
 
     cdef int hi, hj
 
-    cdef float dpos, dr
+    cdef float dpos, dr, Rcond
 
     cdef np.ndarray[np.int32_t, ndim=1] pair_index = np.zeros((Noni), dtype=np.int32)
     cdef np.ndarray[np.int8_t, ndim=1] paired = np.zeros((Nonj), dtype=np.int8)
@@ -113,7 +113,12 @@ cpdef _find_pairs(np.ndarray[dtype=np.float32_t, ndim=2] posi, np.ndarray[dtype=
                 # Compare positions
                 dpos = ((posi[0, hi]-posj[0, hj])**2+(posi[1, hi]-posj[1, hj])**2+(posi[2, hi]-posj[2, hj])**2)**(0.5)
             
-                if(dpos <= pos_cut):
+                if mode == 'centre': #If centre inside
+                    Rcond =  Rthi[hi]
+                elif mode == 'touching': # If touching
+                    Rcond = Rthi[hi] - Rthj[hj]
+                    
+                if(dpos <= Rcond):
                 
                     #Compare radii
                     dr = ((Rthi[hi] - Rthj[hj])**2)**(0.5)
@@ -148,7 +153,7 @@ cpdef _average_inside_radius(float boxsize, int Non, np.ndarray[dtype=np.float32
 
     #Loop through halos
     for hi in prange(Non, nogil=True):
-        Rthc = <int>(Rth[hi] / cellsize) + 1
+        Rthc = <int>(Rth[hi] / cellsize) + 1 # logic on dist will manage this
         xh = <int>(pos[0, hi]/cellsize + ngrid/2)
         yh = <int>(pos[1, hi]/cellsize + ngrid/2)
         zh = <int>(pos[2, hi]/cellsize + ngrid/2)
