@@ -3,10 +3,10 @@ from Cython.Build import cythonize
 
 import numpy as np
 
-#compile_args = ['-fopenmp']
-#link_args = ['-fopenmp']
-compile_args = []
-link_args = []
+compile_args = ['-fopenmp']
+link_args = ['-fopenmp']
+#compile_args = []
+#link_args = []
 
 # Cython module for fast operations
 fast_ext = Extension(
